@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 from PIL import Image
+from torchviz import make_dot
 from cnn_arch import SimpleCNN
 
 model = SimpleCNN()
@@ -27,3 +28,4 @@ for i, ax in enumerate(axes.flat):
 
 plt.suptitle("First Layer Feature Maps (Edges)")
 plt.show()
+# make_dot(output, params=dict(model.named_parameters())).render("cnn_graph", format="png")

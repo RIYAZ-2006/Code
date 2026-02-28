@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CNN Digit Recognition</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.10.0/tf.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #080c12; --panel: #0d1420; --border: #1a2640;
+    --accent: #00e5ff; --accent2: #ff3d71; --text: #cdd9e5; --dim: #4a5568;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.012) 2px, rgba(0,229,255,0.012) 4px); }
+  header { width: 100%; padding: 20px 40px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; }
+  header h1 { font-family: 'Space Mono', monospace; font-size: 1rem; color: var(--accent); letter-spacing: 0.15em; }
+  header span { font-size: 0.7rem; color: var(--dim); font-family: 'Space Mono', monospace; letter-spacing: 0.1em; }
+  .status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-family: 'Space Mono', monospace; font-size: 0.6rem; color: var(--dim); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); animation: blink 1.2s infinite; }
+  .dot.ready { background: var(--accent); animation: none; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+  .main { display: flex; gap: 24px; padding: 28px 40px; width: 100%; max-width: 1120px; align-items: flex-start; flex-wrap: wrap; }
+  .draw-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-shrink: 0; }
+  .canvas-wrapper { position: relative; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  .canvas-label { position: absolute; top: 7px; left: 9px; font-family: 'Space Mono', monospace; font-size: 0.55rem; color: var(--dim); pointer-events: none; letter-spacing: 0.15em; }
+  #drawCanvas { display: block; background: #000; cursor: crosshair; touch-action: none; }
+  .controls { display: flex; gap: 8px; width: 100%; }
+  button { flex: 1; padding: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.1em; cursor: pointer; transition: all 0.15s; text-transform: uppercase; }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,0.06); }
+  .preview-row { display: flex; align-items: center; gap: 10px; }
+  #preview28 { image-rendering: pixelated; border: 1px solid var(--border); width: 56px; height: 56px; }
+  .preview-label { font-family: 'Space Mono', monospace; font-size: 0.52rem; color: var(--dim); line-height: 1.6; }
+  .arch-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .section-label { font-family: 'Space Mono', monospace; font-size: 0.58rem; color: var(--dim); letter-spacing: 0.18em; text-transform: uppercase; }
+  .arch-viz { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .layer-block { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .layer-stack { display: flex; gap: 2px; align-items: flex-end; }
+  .layer-rect { background: var(--panel); border: 1px solid var(--border); border-radius: 2px; transition: border-color 0.25s, background 0.25s, box-shadow 0.25s; }
+  .layer-rect.active { border-color: var(--accent); background: rgba(0,229,255,0.1); box-shadow: 0 0 6px rgba(0,229,255,0.3); }
+  .layer-name { font-family: 'Space Mono', monospace; font-size: 0.48rem; color: var(--dim); text-align: center; white-space: nowrap; }
+  .arch-arrow { color: var(--dim); font-size: 1rem; margin-bottom: 14px; }
+  .fmaps { display: flex; gap: 3px; flex-wrap: wrap; }
+  .fmap-canvas { image-rendering: pixelated; border: 1px solid var(--border); border-radius: 1px; }
+  .result-panel { width: 190px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; }
+  .pred-box { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 18px; text-align: center; }
+  .pred-digit { font-family: 'Space Mono', monospace; font-size: 5.5rem; font-weight: 700; color: var(--accent); line-height: 1; text-shadow: 0 0 40px rgba(0,229,255,0.5); transition: all 0.2s; }
+  .pred-conf { margin-top: 6px; font-size: 0.7rem; color: var(--dim); font-family: 'Space Mono', monospace; }
+  .pred-conf span { color: var(--accent); }
+  .bar-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .bar-num { font-family: 'Space Mono', monospace; font-size: 0.58rem; color: var(--dim); width: 10px; text-align: right; }
+  .bar-track { flex: 1; height: 7px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.35s cubic-bezier(0.4,0,0.2,1); }
+  .bar-fill.top { background: var(--accent2); box-shadow: 0 0 6px rgba(255,61,113,0.6); }
+  .bar-pct { font-family: 'Space Mono', monospace; font-size: 0.52rem; color: var(--dim); width: 36px; text-align: right; }
+  #loading { position: fixed; inset: 0; background: var(--bg); z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+  .load-title { font-family: 'Space Mono', monospace; font-size: 0.8rem; color: var(--accent); letter-spacing: 0.25em; }
+  .load-bar { width: 260px; height: 2px; background: var(--border); overflow: hidden; position: relative; }
+  .load-bar::after { content: ''; position: absolute; left: -60%; width: 60%; height: 100%; background: var(--accent); animation: sweep 0.9s infinite; }
+  @keyframes sweep { to { left: 110%; } }
+  .load-msg { font-family: 'Space Mono', monospace; font-size: 0.6rem; color: var(--dim); max-width: 320px; text-align: center; }
+  .train-progress { width: 260px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; display: none; }
+  .train-progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="load-title">CNN DIGIT CLASSIFIER</div>
+  <div class="load-bar"></div>
+  <div class="train-progress" id="trainProgress"><div class="train-progress-fill" id="trainFill"></div></div>
+  <div class="load-msg" id="loadMsg">Initializing TensorFlow.js...</div>
+</div>
+
+<header>
+  <h1>CNN Digit Classifier</h1>
+  <span>MNIST · LeNet-5 · TF.js</span>
+  <div class="status"><div class="dot" id="statusDot"></div><span id="statusText">Loading...</span></div>
+</header>
+
+<div class="main">
+  <div class="draw-panel">
+    <div class="canvas-wrapper">
+      <div class="canvas-label">DRAW DIGIT 0–9</div>
+      <canvas id="drawCanvas" width="280" height="280"></canvas>
+    </div>
+    <div class="controls">
+      <button class="primary" onclick="runPredict()">▶ RUN</button>
+      <button onclick="clearAll()">CLEAR</button>
+    </div>
+    <div class="preview-row">
+      <canvas id="preview28" width="28" height="28"></canvas>
+      <div class="preview-label">28×28 px<br>normalized<br>input tensor</div>
+    </div>
+  </div>
+
+  <div class="arch-panel">
+    <div class="section-label">Architecture · Forward Pass</div>
+    <div class="arch-viz" id="archViz"></div>
+    <div class="section-label" style="margin-top:6px">Conv1 Activations — 32 feature maps (28×28)</div>
+    <div class="fmaps" id="fmaps1"></div>
+    <div class="section-label" style="margin-top:6px">Conv2 Activations — 64 feature maps (7×7), first 32 shown</div>
+    <div class="fmaps" id="fmaps2"></div>
+  </div>
+
+  <div class="result-panel">
+    <div class="pred-box">
+      <div class="pred-digit" id="predDigit">?</div>
+      <div class="pred-conf">confidence <span id="predConf">—</span></div>
+    </div>
+    <div class="section-label">Class Probabilities</div>
+    <div id="barsContainer"></div>
+  </div>
+</div>
+
+<script>
+let model = null;
+let isReady = false;
+let predicting = false;
+
+// ── CANVAS ──────────────────────────────────────────────
+const drawCanvas = document.getElementById('drawCanvas');
+const dctx = drawCanvas.getContext('2d', { willReadFrequently: true });
+let drawing = false, lastX = 0, lastY = 0;
+
+function initCanvas() {
+  dctx.fillStyle = '#000';
+  dctx.fillRect(0, 0, 280, 280);
+  dctx.lineWidth = 20;
+  dctx.lineCap = 'round';
+  dctx.lineJoin = 'round';
+  dctx.strokeStyle = '#fff';
+}
+
+function getXY(e) {
+  const r = drawCanvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return [src.clientX - r.left, src.clientY - r.top];
+}
+
+drawCanvas.addEventListener('mousedown', e => { drawing = true; [lastX, lastY] = getXY(e); });
+drawCanvas.addEventListener('mouseup',   () => { drawing = false; dctx.beginPath(); if (isReady) runPredict(); });
+drawCanvas.addEventListener('mouseleave',() => { drawing = false; dctx.beginPath(); });
+drawCanvas.addEventListener('mousemove', e => {
+  if (!drawing) return;
+  const [x, y] = getXY(e);
+  dctx.beginPath(); dctx.moveTo(lastX, lastY); dctx.lineTo(x, y); dctx.stroke();
+  [lastX, lastY] = [x, y];
+});
+drawCanvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; [lastX, lastY] = getXY(e); }, { passive: false });
+drawCanvas.addEventListener('touchend',   e => { e.preventDefault(); drawing = false; dctx.beginPath(); if (isReady) runPredict(); }, { passive: false });
+drawCanvas.addEventListener('touchmove',  e => {
+  e.preventDefault();
+  if (!drawing) return;
+  const [x, y] = getXY(e);
+  dctx.beginPath(); dctx.moveTo(lastX, lastY); dctx.lineTo(x, y); dctx.stroke();
+  [lastX, lastY] = [x, y];
+}, { passive: false });
+
+function clearAll() {
+  dctx.fillStyle = '#000';
+  dctx.fillRect(0, 0, 280, 280);
+  document.getElementById('predDigit').textContent = '?';
+  document.getElementById('predConf').textContent = '—';
+  if (isReady) runPredict();
+}
+
+// ── MODEL ────────────────────────────────────────────────
+function buildModel() {
+  const m = tf.sequential();
+  m.add(tf.layers.conv2d({ inputShape: [28, 28, 1], filters: 32, kernelSize: 3, padding: 'same', activation: 'relu', name: 'conv1' }));
+  m.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2, name: 'pool1' }));
+  m.add(tf.layers.conv2d({ filters: 64, kernelSize: 3, padding: 'same', activation: 'relu', name: 'conv2' }));
+  m.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2, name: 'pool2' }));
+  m.add(tf.layers.flatten({ name: 'flatten' }));
+  m.add(tf.layers.dense({ units: 128, activation: 'relu', name: 'dense1' }));
+  m.add(tf.layers.dropout({ rate: 0.3, name: 'drop1' }));
+  m.add(tf.layers.dense({ units: 10, activation: 'softmax', name: 'output' }));
+  m.compile({ optimizer: tf.train.adam(0.001), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+  return m;
+}
+
+// ── SYNTHETIC DATA ────────────────────────────────────────
+function makeDigitPixels(digit, jitter) {
+  const img = new Float32Array(28 * 28);
+  const set = (x, y) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = Math.max(0, Math.min(27, Math.round(x + dx + (Math.random()-0.5)*jitter)));
+      const ny = Math.max(0, Math.min(27, Math.round(y + dy + (Math.random()-0.5)*jitter)));
+      img[ny*28+nx] = Math.min(1, img[ny*28+nx] + 0.6 + Math.random()*0.4);
+    }
+  };
+  const hline = (y, x1, x2) => { for (let x=x1; x<=x2; x+=0.7) set(x,y); };
+  const vline = (x, y1, y2) => { for (let y=y1; y<=y2; y+=0.7) set(x,y); };
+  const ox=(Math.random()-0.5)*4, oy=(Math.random()-0.5)*4;
+  const L=5+ox, R=19+ox, T=4+oy, B=22+oy, M=13+oy, Cx=12+ox;
+  if      (digit===0) { hline(T,L,R); hline(B,L,R); vline(L,T,B); vline(R,T,B); }
+  else if (digit===1) { vline(Cx,T,B); hline(B,Cx-3,Cx+3); }
+  else if (digit===2) { hline(T,L,R); vline(R,T,M); hline(M,L,R); vline(L,M,B); hline(B,L,R); }
+  else if (digit===3) { hline(T,L,R); hline(M,L,R); hline(B,L,R); vline(R,T,B); }
+  else if (digit===4) { vline(L,T,M); hline(M,L,R); vline(R,T,B); }
+  else if (digit===5) { hline(T,L,R); vline(L,T,M); hline(M,L,R); vline(R,M,B); hline(B,L,R); }
+  else if (digit===6) { hline(T,L,R); vline(L,T,B); hline(M,L,R); vline(R,M,B); hline(B,L,R); }
+  else if (digit===7) { hline(T,L,R); vline(R,T,B); }
+  else if (digit===8) { hline(T,L,R); hline(M,L,R); hline(B,L,R); vline(L,T,B); vline(R,T,B); }
+  else if (digit===9) { hline(T,L,R); hline(M,L,R); hline(B,L,R); vline(L,T,M); vline(R,T,B); }
+  return img;
+}
+
+async function generateTrainingData(samplesPerClass) {
+  const total = 10 * samplesPerClass;
+  const xData = new Float32Array(total * 28 * 28);
+  const yData = new Float32Array(total * 10);
+  let idx = 0;
+  for (let d = 0; d < 10; d++) {
+    for (let s = 0; s < samplesPerClass; s++) {
+      xData.set(makeDigitPixels(d, 1.8), idx * 28 * 28);
+      yData[idx * 10 + d] = 1.0;
+      idx++;
+    }
+  }
+  return {
+    xs: tf.tensor4d(xData, [total, 28, 28, 1]),
+    ys: tf.tensor2d(yData, [total, 10])
+  };
+}
+
+// ── INIT ──────────────────────────────────────────────────
+async function init() {
+  buildArchViz();
+  initBars();
+  initCanvas();
+  setLoadMsg('Building CNN model...');
+  model = buildModel();
+  setLoadMsg('Generating training samples...');
+  await tf.nextFrame();
+  const { xs, ys } = await generateTrainingData(60);
+  setLoadMsg('Training CNN... (8 epochs)');
+  document.getElementById('trainProgress').style.display = 'block';
+  const EPOCHS = 8;
+  await model.fit(xs, ys, {
+    epochs: EPOCHS,
+    batchSize: 32,
+    shuffle: true,
+    callbacks: {
+      onEpochEnd: async (epoch, logs) => {
+        const pct = Math.round(((epoch+1)/EPOCHS)*100);
+        document.getElementById('trainFill').style.width = pct + '%';
+        setLoadMsg(`Epoch ${epoch+1}/${EPOCHS} — loss: ${logs.loss.toFixed(3)}, acc: ${(logs.acc*100).toFixed(0)}%`);
+        await tf.nextFrame();
+      }
+    }
+  });
+  xs.dispose(); ys.dispose();
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('statusDot').classList.add('ready');
+  document.getElementById('statusText').textContent = 'Ready';
+  isReady = true;
+  runPredict();
+}
+
+// ── PREDICT ───────────────────────────────────────────────
+async function runPredict() {
+  if (!isReady || predicting) return;
+  predicting = true;
+  try {
+    // Downsample to 28x28
+    const tmp = document.createElement('canvas');
+    tmp.width = 28; tmp.height = 28;
+    const tc = tmp.getContext('2d', { willReadFrequently: true });
+    tc.drawImage(drawCanvas, 0, 0, 28, 28);
+
+    // Update preview
+    document.getElementById('preview28').getContext('2d').drawImage(tmp, 0, 0);
+
+    // Build tensor
+    const raw = tc.getImageData(0, 0, 28, 28).data;
+    const pixels = new Float32Array(28 * 28);
+    for (let i = 0; i < 28*28; i++) pixels[i] = raw[i*4] / 255.0;
+    const inputTensor = tf.tensor4d(pixels, [1, 28, 28, 1]);
+
+    // Predict
+    const probTensor = model.predict(inputTensor);
+    const probs = Array.from(probTensor.dataSync());
+    probTensor.dispose();
+
+    // Update UI
+    const top = probs.indexOf(Math.max(...probs));
+    document.getElementById('predDigit').textContent = top;
+    document.getElementById('predConf').textContent = (probs[top]*100).toFixed(1) + '%';
+    updateBars(probs, top);
+    highlightLayers();
+    await drawFeatureMapsAll(inputTensor);
+    inputTensor.dispose();
+  } catch (err) {
+    console.error('Predict error:', err);
+  }
+  predicting = false;
+}
+
+// ── FEATURE MAPS ──────────────────────────────────────────
+async function drawFeatureMapsAll(inputTensor) {
+  try {
+    const conv1Model = tf.model({ inputs: model.inputs, outputs: model.getLayer('conv1').output });
+    const pool2Model = tf.model({ inputs: model.inputs, outputs: model.getLayer('pool2').output });
+    const fm1 = conv1Model.predict(inputTensor);
+    const fm2 = pool2Model.predict(inputTensor);
+    await renderFMaps('fmaps1', fm1, 32, 22);
+    await renderFMaps('fmaps2', fm2, 32, 22);
+    fm1.dispose(); fm2.dispose();
+    conv1Model.dispose(); pool2Model.dispose();
+  } catch(e) { console.warn('Feature maps:', e); }
+}
+
+async function renderFMaps(containerId, tensor, numFilters, displayPx) {
+  const container = document.getElementById(containerId);
+  const [, H, W, C] = tensor.shape;
+  const count = Math.min(numFilters, C);
+  const data = await tensor.data();
+
+  while (container.children.length < count) {
+    const c = document.createElement('canvas');
+    c.className = 'fmap-canvas';
+    c.width = W; c.height = H;
+    c.style.width = displayPx + 'px';
+    c.style.height = displayPx + 'px';
+    container.appendChild(c);
+  }
+
+  for (let f = 0; f < count; f++) {
+    const cvs = container.children[f];
+    const ctx = cvs.getContext('2d');
+    const imgData = ctx.createImageData(W, H);
+    let mn = Infinity, mx = -Infinity;
+    for (let i = 0; i < H*W; i++) {
+      const v = data[i * C + f];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    const range = (mx - mn) || 1;
+    for (let i = 0; i < H*W; i++) {
+      const norm = Math.floor(((data[i*C+f] - mn) / range) * 255);
+      imgData.data[i*4]   = 0;
+      imgData.data[i*4+1] = norm;
+      imgData.data[i*4+2] = Math.min(255, norm + 80);
+      imgData.data[i*4+3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+}
+
+// ── ARCHITECTURE VIZ ──────────────────────────────────────
+const ARCH = [
+  { id:'a_input', name:'INPUT\n28×28×1', rects:[{w:18,h:58}] },
+  { arrow:true },
+  { id:'a_conv1', name:'CONV1\n32f 3×3', rects:Array.from({length:5},(_,i)=>({w:12,h:52-i})) },
+  { arrow:true },
+  { id:'a_pool1', name:'POOL1\n14×14', rects:[{w:12,h:42}] },
+  { arrow:true },
+  { id:'a_conv2', name:'CONV2\n64f 3×3', rects:Array.from({length:7},(_,i)=>({w:11,h:38-i})) },
+  { arrow:true },
+  { id:'a_pool2', name:'POOL2\n7×7', rects:[{w:11,h:28}] },
+  { arrow:true },
+  { id:'a_dense', name:'DENSE\n128', rects:[{w:10,h:58}] },
+  { arrow:true },
+  { id:'a_out',   name:'OUTPUT\n10', rects:[{w:10,h:22}] },
+];
+
+function buildArchViz() {
+  const viz = document.getElementById('archViz');
+  viz.innerHTML = '';
+  ARCH.forEach(l => {
+    if (l.arrow) { const a=document.createElement('div'); a.className='arch-arrow'; a.textContent='›'; viz.appendChild(a); return; }
+    const block = document.createElement('div'); block.className='layer-block'; block.id=l.id;
+    const stack = document.createElement('div'); stack.className='layer-stack';
+    l.rects.forEach((r,i) => {
+      const rect=document.createElement('div'); rect.className='layer-rect';
+      rect.style.width=r.w+'px'; rect.style.height=r.h+'px';
+      rect.style.opacity=String(1-i*0.1);
+      if(i>0) rect.style.marginLeft='-9px';
+      stack.appendChild(rect);
+    });
+    const name=document.createElement('div'); name.className='layer-name';
+    name.innerHTML=l.name.replace('\n','<br>');
+    block.appendChild(stack); block.appendChild(name); viz.appendChild(block);
+  });
+}
+
+function highlightLayers() {
+  ['a_input','a_conv1','a_pool1','a_conv2','a_pool2','a_dense','a_out'].forEach((id,i) => {
+    setTimeout(() => {
+      const el=document.getElementById(id); if(!el) return;
+      el.querySelectorAll('.layer-rect').forEach(r=>r.classList.add('active'));
+      setTimeout(()=>el.querySelectorAll('.layer-rect').forEach(r=>r.classList.remove('active')),280);
+    }, i*70);
+  });
+}
+
+// ── BARS ──────────────────────────────────────────────────
+function initBars() {
+  const c = document.getElementById('barsContainer');
+  c.innerHTML = '';
+  for (let i=0;i<10;i++) {
+    const row=document.createElement('div'); row.className='bar-row';
+    row.innerHTML=`<div class="bar-num">${i}</div><div class="bar-track"><div class="bar-fill" id="bf${i}"></div></div><div class="bar-pct" id="bp${i}">0%</div>`;
+    c.appendChild(row);
+  }
+}
+
+function updateBars(probs, top) {
+  for (let i=0;i<10;i++) {
+    document.getElementById('bf'+i).style.width=(probs[i]*100).toFixed(1)+'%';
+    document.getElementById('bp'+i).textContent=(probs[i]*100).toFixed(1)+'%';
+    document.getElementById('bf'+i).classList.toggle('top', i===top);
+  }
+}
+
+function setLoadMsg(msg) { document.getElementById('loadMsg').textContent=msg; }
+
+// ── START ─────────────────────────────────────────────────
+init().catch(err => { setLoadMsg('Error: '+err.message); console.error(err); });
+</script>
+</body>
+</html>

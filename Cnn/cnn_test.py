@@ -1,5 +1,6 @@
 from PIL import Image
 import torchvision.transforms as transforms
+from torchviz import make_dot
 from cnn_arch import SimpleCNN
 
 model = SimpleCNN()
@@ -19,6 +20,6 @@ input_tensor = input_tensor.unsqueeze(0)
 
 # Forward pass
 output = model(input_tensor)
-
+# make_dot(output, params=dict(model.named_parameters())).render("cnn_graph", format="png")
 print("Output shape:", output.shape)
 print("Raw output:", output)
